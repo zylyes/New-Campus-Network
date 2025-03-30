@@ -4,11 +4,14 @@ import sys
 import win32event
 import tkinter as tk
 from tkinter import messagebox
-from Settings import CampusNetSettingsManager
-from Login import CampusNetLogin
-from Mutex import on_main_close
-from Logging import setup_logging
+from settings_manager import CampusNetSettingsManager
+from login_manager import CampusNetLogin
+from mutex_manager import on_main_close
+from log_manager import setup_logging
 import threading
+
+# 程序当前版本
+CURRENT_VERSION = "2.0.0"
 
 if __name__ == "__main__":  # 如果当前脚本被直接运行
     # 尝试创建一个互斥锁
