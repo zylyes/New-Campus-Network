@@ -86,8 +86,7 @@ def restart_app(self):  # 重启应用程序
     threading.Thread(target=restart).start()
 
 
-def on_main_close(root, settings_manager):  # 主窗口关闭事件处理函数
-    global mutex, mutex_created  # 声明全局变量mutex和mutex_created
+def on_main_close(root, settings_manager, mutex, mutex_created):  # 添加 mutex 和 mutex_created 参数
     if messagebox.askokcancel(
         "退出", "确定要退出应用吗？"
     ):  # 弹出确认对话框，用户确认退出应用

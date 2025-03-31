@@ -131,6 +131,7 @@ def setup_ui(self):  # 移除center_window参数
         "中国联通",
         "校园网",
     )  # 设置下拉框的选项
+    self.isp_combobox.set("校园网")  # 设置默认值为 "校园网"
     self.isp_combobox.grid(
         row=2, column=1, columnspan=2, padx=5, pady=5, sticky="e"
     )  # 将下拉框放置在框架中

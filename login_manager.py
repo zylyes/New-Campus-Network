@@ -268,6 +268,10 @@ class CampusNetLogin:
         encoded_password = urllib.parse.quote(password)
 
         # 拼接完整的登录参数
+        sign_parameter = (
+            f"{self.config['api_url']}?user_account={encoded_username}{selected_isp_code}"
+            f"&user_password={encoded_password}&ac_id=1&action=login"
+        )  # 定义登录请求的完整URL
 
         try:
             # 发送登录请求并将响应存储在名为'response'的变量中

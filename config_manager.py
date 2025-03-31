@@ -33,7 +33,7 @@ def save_credentials(self, username, password, remember):
         "中国电信": "telecom",  # 中国电信
         "中国移动": "cmcc",  # 中国移动
         "中国联通": "unicom",  # 中国联通
-        "campus": "校园网",  # 校园网
+        "校园网": "campus",  # 校园网
     }  # 定义运营商映射关系
     self.config["isp"] = isp_reverse_mapping.get(
         self.isp_var.get(), "campus"
