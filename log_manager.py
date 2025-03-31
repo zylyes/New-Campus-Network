@@ -1,3 +1,4 @@
+# 日志管理器
 import logging
 import os
 from logging.handlers import TimedRotatingFileHandler

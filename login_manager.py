@@ -1,17 +1,20 @@
-import tkinter as tk
-from tkinter import messagebox, ttk
-import threading
-import requests
-import base64
-import json
-import os
+# 登录管理器
+import tkinter as tk  # 导入tkinter库，用于GUI界面创建
+from tkinter import messagebox # 从tkinter导入messagebox和ttk，用于图形界面中的对话框和高级组件
+import requests  # 导入requests库，用于处理HTTP请求
+import os  # 导入os库，用于处理操作系统级别的接口，如文件管理
+import json  # 导入json库，用于处理JSON数据格式
+import logging  # 导入logging库，用于记录日志
+import socket  # 导入socket库，用于网络通信
+import threading  # 导入threading库，用于多线程编程
+import time  # 导入time库，用于时间操作
+import base64  # 导入base64库，用于编码和解码base64数据
 import webbrowser  # 导入webbrowser，用于在浏览器中打开URL
-import socket
-import urllib
-from pystray import MenuItem as item
-import pystray
-from PIL import Image
-import logging
+import urllib.parse  # 导入urllib库，用于URL编码
+from ui_manager import setup_ui, center_window_on_parent, on_settings_close, save_settings_and_close  # 导入setup_ui函数、center_window_on_parent、on_settings_close和save_settings_and_close
+from encryption_manager import load_or_generate_key, clear_key_and_credentials, clear_credentials # 导入自定义函数，用于加载或生成密钥以及清除密钥和凭据
+from config_manager import load_credentials  # 导入加载凭据的函数
+from mutex_manager import apply_auto_start_setting, restart_app  # 导入 apply_auto_start_setting 和 restart_app 方法
 
 class CampusNetLogin:  
     def __init__(self, master, settings_manager, show_ui=True):  # 初始化方法
@@ -19,7 +22,7 @@ class CampusNetLogin:
         self.config_lock = threading.Lock()  # 初始化线程锁用于保护配置文件的读写
         self.settings_manager = settings_manager  # 初始化设置管理器
         self.config = self.settings_manager.load_or_create_config()  # 加载配置文件
-        self.key, self.cipher_suite = self.load_or_generate_key()  # 获取加密密钥
+        self.key, self.cipher_suite = load_or_generate_key()  # 获取加密密钥
 
         self.eye_open_icon = tk.PhotoImage(
             file="./icons/eye_open.png"
@@ -32,9 +35,20 @@ class CampusNetLogin:
         # 初始化ISP下拉列表的变量，并使用配置文件中的ISP设置，如果没有则默认为"campus"
         self.isp_var = tk.StringVar(value=self.config.get("isp", "campus"))
 
+        self.minimize_to_tray_var = tk.IntVar(value=self.config.get("minimize_to_tray_on_login", True))
+        self.auto_start_var = tk.IntVar(value=self.config.get("auto_start", False))
+        self.auto_login_var = tk.IntVar(value=self.config.get("auto_login", False))
+
         self.show_ui = show_ui  # 是否显示UI界面的标志
+        self.setup_ui = lambda: setup_ui(self)  # 将setup_ui函数绑定到实例方法
+        self.center_window_on_parent = lambda child, width, height: center_window_on_parent(self, child, width, height)  # 绑定center_window_on_parent
+        self.on_settings_close = lambda settings_window: on_settings_close(self, settings_window)  # 绑定 on_settings_close 方法
+        self.save_settings_and_close = lambda api_url, settings_window, config, minimize_to_tray_var, auto_start_var, auto_login_var: save_settings_and_close(
+            self, api_url, settings_window
+        )  # 绑定 save_settings_and_close 方法
+        self.restart_app = lambda: restart_app(self)  # 绑定 restart_app 方法
         if show_ui:
-            self.setup_ui()  # 初始化UI界面
+            self.setup_ui()  # 调用setup_ui函数
         self.auto_login()  # 执行自动登录操作
     
     def load_config(self):  # 加载配置
@@ -51,17 +65,20 @@ class CampusNetLogin:
             s.close()  # 关闭套接字连接
         return ip  # 返回本机IP地址
 
-    def auto_login(self):
-        """自动登录逻辑"""
-        if self.config.get("remember_credentials", False):
-            username = self.config.get("username", "")
-            password = self.decrypt_password(self.config.get("password", ""))
-            if username and password:
-                self.username_entry.insert(0, username)
-                self.password_entry.insert(0, password)
-                self.remember_var.set(1)
-                # 执行自动登录
-                self.perform_login(username, password, auto=True) 
+    def auto_login(self):  # 自动登录
+        if self.config.get("auto_login", False):  # 检查配置是否要求自动登录
+            username, password, isp, remember = load_credentials(self.config)  # 调用加载凭据函数
+            if username and password:  # 如果用户名和密码存在
+                self.isp_var.set(isp)  # 设置运营商变量
+                # 使用加载的凭据进行登录
+                self.perform_login(username, password, auto=True)
+            else:
+                # 如果没有有效的凭据，显示UI以便用户可以手动输入
+                if self.show_ui:  # 如果配置中启用了自动登录
+                    self.setup_ui()  # 显示UI
+        else:
+            # 如果配置中未启用自动登录，则总是显示UI
+            self.setup_ui()
 
     def login(self):  # 登录
         # 从输入框获取用户名和密码
@@ -251,7 +268,6 @@ class CampusNetLogin:
         encoded_password = urllib.parse.quote(password)
 
         # 拼接完整的登录参数
-        sign_parameter = f"{self.config['api_url']}?c=Portal&a=login&callback=dr1004&login_method=1&user_account={encoded_username}{selected_isp_code}&user_password={encoded_password}&wlan_user_ip={self.get_ip()}"
 
         try:
             # 发送登录请求并将响应存储在名为'response'的变量中
@@ -279,53 +295,98 @@ class CampusNetLogin:
                 ),
             )  # 显示通知
 
-    def setup_ui(self):  
-        self.master.title("校园网自动登录")  
-        main_frame = ttk.Frame(self.master)  
-        main_frame.pack(padx=10, pady=10, expand=True, fill=tk.BOTH)  
+    def show_error_message(title, message):
+        """显示错误信息和用户指导"""
+        messagebox.showerror(title, message)  # 弹出错误信息对话框，显示标题和消息
 
-        ttk.Label(main_frame, text="用户名：", anchor="w").grid(row=0, column=0, padx=5, pady=5, sticky="ew")  
-        self.username_entry = ttk.Entry(main_frame)  
-        self.username_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")  
+    def save_error_report(report):  # 保存错误报告
+        filename = "error_reports.txt"  # 错误报告保存到的文件名
+        with open(filename, "a") as file:  # 以追加模式打开文件
+            timestamp = time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.localtime()
+            )  # 获取当前时间戳
+            file.write(f"{timestamp}: {report}\n\n")  # 将错误报告和时间戳写入文件
 
-        ttk.Label(main_frame, text="密码：", anchor="w").grid(row=1, column=0, padx=5, pady=5, sticky="ew")  
-        self.password_entry = ttk.Entry(main_frame, show="*")  
-        self.password_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")  
+    def report_error(self):
+        # 创建一个新的顶级窗口用于报告错误
+        error_report_window = tk.Toplevel(self.master)  # 创建一个新的顶级窗口
+        error_report_window.title("报告错误")  # 设置窗口标题为"报告错误"
 
-        self.toggle_password_btn = tk.Button(
-            main_frame,
-            image=self.eye_closed_icon,
-            command=self.toggle_password_visibility,
-            borderwidth=0,
-        )  
-        self.toggle_password_btn.grid(row=1, column=2, padx=5, pady=5, sticky="w")  
+        # 添加标签提示用户描述问题或提供反馈
+        tk.Label(error_report_window, text="请描述遇到的问题或提供反馈：").pack(
+            padx=10, pady=5
+        )
+        error_text = tk.Text(error_report_window, height=10, width=50)  # 创建文本框
+        error_text.pack(padx=10, pady=5)  # 将文本框放置在窗口中
 
-        self.remember_var = tk.IntVar()  
-        ttk.Checkbutton(main_frame, text="记住账号和密码", variable=self.remember_var).grid(row=2, column=0, columnspan=3, padx=5, pady=5, sticky="w")  
+        def submit_report():  # 提交错误报告
+            # 获取用户输入的错误描述并去除首尾空格
+            report_content = error_text.get("1.0", "end").strip()
+            if report_content:  # 如果错误描述不为空
+                # 调用save_error_report方法保存错误报告
+                self.save_error_report(report_content)
+                messagebox.showinfo(
+                    "报告错误", "您的反馈已提交，谢谢！"
+                )  # 弹出信息提示框
+                error_report_window.destroy()  # 销毁报告错误窗口
+            else:  # 如果错误描述为空
+                messagebox.showwarning(
+                    "报告错误", "错误描述不能为空。"
+                )  # 弹出警告提示框
 
-        ttk.Button(main_frame, text="登录", command=self.login).grid(row=3, column=0, columnspan=3, padx=5, pady=5, sticky="ew")  
+        # 添加提交按钮，点击提交按钮时执行submit_report函数
+        tk.Button(error_report_window, text="提交", command=submit_report).pack(pady=5)
 
-    def toggle_password_visibility(self):
-        if self.password_visible:
-            self.password_entry.config(show="*")
-            self.toggle_password_btn.config(image=self.eye_closed_icon)
-            self.password_visible = False
-        else:
-            self.password_entry.config(show="")
-            self.toggle_password_btn.config(image=self.eye_open_icon)
-            self.password_visible = True
+    def open_suggestion_box(self):  # 打开建议框
+        suggestion_window = tk.Toplevel(self.master)  # 创建一个新的顶级窗口用于提交建议
+        suggestion_window.title("提交建议")  # 设置窗口标题为"提交建议"
 
-    def hide_window(self):
-        self.master.withdraw()  
-        icon_image = Image.open("./icons/ECUT.ico")
-        self.icon = pystray.Icon("campus_net_login", icon=icon_image, title="校园网自动登录", menu=pystray.Menu(
-            item("打开", self.show_window, default=True),
-            item("退出", lambda icon, item: self.quit_app(icon)),
-        ))
-        self.icon.run_detached()
+        tk.Label(suggestion_window, text="请分享您的建议或反馈：").pack(
+            padx=10, pady=5
+        )  # 在窗口中添加文本标签
+        suggestion_text = tk.Text(
+            suggestion_window, height=10, width=50
+        )  # 创建一个文本框用于输入建议
+        suggestion_text.pack(padx=10, pady=5)  # 将文本框放置在窗口中
 
-    def quit_app(self, icon=None, item=None):  
-        if icon:  
-            icon.stop()  
-        self.master.quit()  
-        self.master.destroy()
+        def submit_suggestion():  # 提交建议
+            suggestion_content = suggestion_text.get(
+                "1.0", "end"
+            ).strip()  # 获取用户输入的建议并去除首尾空格
+            if suggestion_content:  # 如果建议内容不为空
+                self.save_suggestion(
+                    suggestion_content
+                )  # 调用save_suggestion方法保存建议
+                messagebox.showinfo(
+                    "提交建议", "您的建议已提交，感谢您的反馈！"
+                )  # 弹出信息提示框，确认建议已提交
+                suggestion_window.destroy()  # 销毁提交建议窗口
+            else:  # 如果建议内容为空
+                messagebox.showwarning(
+                    "提交建议", "建议内容不能为空。"
+                )  # 弹出警告提示框，提醒建议内容不能为空
+
+        tk.Button(suggestion_window, text="提交", command=submit_suggestion).pack(
+            pady=5
+        )  # 在窗口中添加提交按钮，并设置点击事件为submit_suggestion函数
+
+    def save_suggestion(suggestion):  # 保存建议
+        filename = "suggestions.txt"  # 建议保存到的文件名
+        with open(filename, "a") as file:  # 打开文件并追加内容
+            timestamp = time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.localtime()
+            )  # 获取当前时间戳
+            file.write(f"{timestamp}: {suggestion}\n\n")  # 将建议和时间戳写入文件
+        logging.info("用户建议已保存。")  # 记录日志信息
+
+    def clear_key_and_credentials(self):
+        """清除加密密钥和用户凭据"""
+        clear_key_and_credentials(self)
+
+    def clear_credentials(self):
+        """仅清除用户凭据"""
+        clear_credentials(self)
+
+    def apply_auto_start_setting(self):
+        """应用自动启动设置"""
+        apply_auto_start_setting(self)  # 调用 mutex_manager 中的 apply_auto_start_setting 方法

@@ -1,10 +1,16 @@
-import win32api
-import win32event
-import winerror
-import sys
-import pywintypes
-import logging
-
+# 互斥锁管理器
+from tkinter import messagebox # 从tkinter导入messagebox和ttk，用于图形界面中的对话框和高级组件
+import os  # 导入os库，用于处理操作系统级别的接口，如文件管理
+import logging  # 导入logging库，用于记录日志
+import subprocess  # 导入subprocess库，用于调用外部进程
+import threading  # 导入threading库，用于多线程编程
+import time  # 导入time库，用于时间操作
+import win32api  # 导入win32api库，用于Windows API操作
+import winshell  # 导入winshell库用于Windows快捷方式操作
+import pywintypes  # 导入pywintypes库，用于Windows API操作
+import win32event  # 导入win32event模块，用于Windows事件操作
+import winerror  # 导入winerror模块，用于Windows错误码
+import sys  # 导入sys库，用于系统相关的操作
 # 互斥锁管理类
 class AppMutex:
     _instance = None
@@ -47,44 +53,38 @@ class AppMutex:
             self.mutex_created = False
             print("互斥锁已释放")
 
-def show_window(self, icon=None, item=None):
-        """从托盘恢复窗口"""
-        if icon:  # 如果提供了icon参数
-            icon.stop()  # 停止托盘图标
-        self.master.deiconify()  # 显示窗口
-        self.setup_ui()  # 重新设置或刷新UI界面
+def apply_auto_start_setting(self):  # 应用自动启动设置
+    start_up_folder = winshell.startup()  # 获取Windows启动文件夹路径
+    shortcut_path = os.path.join(
+        start_up_folder, "CampusNetLoginApp.lnk"
+    )  # 设置快捷方式路径和文件名
+    if self.config.get("auto_start"):  # 检查配置中是否开启了自动启动
+        if not os.path.exists(shortcut_path):  # 如果快捷方式不存在
+            # 使用winshell创建快捷方式
+            script_path = os.path.join(
+                os.getcwd(), "校园网登录程序.exe"
+            )  # 设置可执行文件的路径
+            with winshell.shortcut(shortcut_path) as shortcut:  # 创建快捷方式
+                shortcut.path = script_path  # 设置快捷方式的目标路径
+                shortcut.description = "自动登录校园网的应用"  # 设置快捷方式描述
+                shortcut.working_directory = os.getcwd()  # 设置工作目录为当前目录
+    else:  # 如果配置中未开启自动启动
+        if os.path.exists(shortcut_path):  # 如果快捷方式存在
+            # 删除快捷方式
+            os.remove(shortcut_path)
 
-def hide_window(self):
-    """隐藏窗口并显示托盘图标"""
-    self.master.withdraw()  # 隐藏窗口
+def restart_app(self):  # 重启应用程序
+    def restart():  # 重启逻辑
+        # 等待一小段时间，确保主进程有足够的时间退出
+        time.sleep(1)
+        # 使用subprocess启动新的应用实例
+        subprocess.Popen(["校园网登录程序.exe"])
+        # 退出当前应用
+        self.master.quit()
 
-    def setup_system_tray():  # 设置系统托盘
-        # 加载托盘图标
-        icon_image = Image.open("./icons/ECUT.ico")
+    # 在后台线程中执行重启逻辑，以避免阻塞UI或其他处理
+    threading.Thread(target=restart).start()
 
-        # 创建托盘图标
-        self.icon = pystray.Icon(
-            "campus_net_login",  # 托盘图标的名称
-            icon=icon_image,  # 托盘图标的图像
-            title="校园网自动登录",  # 托盘图标的标题
-            menu=pystray.Menu(
-                item("打开", self.show_window, default=True),
-                item("退出", lambda icon, item: self.quit_app(icon)),
-            ),  # 托盘图标的菜单
-        )
-        # 运行托盘图标
-        self.icon.run_detached()
-
-    # 在后台线程中设置系统托盘，防止阻塞主线程
-    threading.Thread(target=setup_system_tray).start()
-
-def quit_app(self, icon=None, item=None):  # 退出应用
-    if icon:  # 如果提供了icon参数
-        icon.stop()  # 停止托盘图标
-    # 保存配置，清理资源，退出程序的其余步骤
-    self.master.quit()
-    # 可能有必要的清理步骤
-    self.master.destroy()
 
 def on_main_close(root, settings_manager):  # 主窗口关闭事件处理函数
     global mutex, mutex_created  # 声明全局变量mutex和mutex_created
