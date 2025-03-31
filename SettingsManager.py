@@ -1,10 +1,6 @@
-# 设置管理器
-import json
-import threading
-import os
-import logging
 
-class CampusNetSettingsManager:  # 定义一个校园网设置管理器类
+# 配置管理类
+class SettingsManager:
     def __init__(self, config_file="config.json", default_config=None):  # 初始化方法
         self.config_lock = threading.Lock()  # 创建一个线程锁
         self.cached_config = {}  # 创建一个缓存配置的字典
@@ -57,3 +53,5 @@ class CampusNetSettingsManager:  # 定义一个校园网设置管理器类
     def save_config(self, config):  # 保存配置
         self.cached_config.update(config)  # 更新缓存配置
         logging.info("配置已更新到缓存")  # 记录信息：配置已更新到缓存
+
+    
